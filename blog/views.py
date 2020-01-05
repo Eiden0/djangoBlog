@@ -46,6 +46,20 @@ class PostListView(ListView):
             context['Q_Form'] = True
         return context         
 
+class PostmarkedView(ListView):
+    model = Post
+    template_name = 'blog/bookmark.html'
+    context_object_name = 'posts'
+    ordering = ['-date_posted']
+    paginate_by = 5
+    
+    def get_context_data(self, *args, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['posts'] = Post.objects.filter(isQuestion = False, save = self.request.user.id) 
+
+        return context
+
+
 class UserPostListView(ListView):
     model = Post
     template_name = 'blog/user_post.html'
@@ -64,17 +78,23 @@ class PostDetailView(View):
     def get(self, request, *args, **kwargs):
         post = get_object_or_404(Post, pk=kwargs['pk'])
         is_liked = False
+        is_saved = False
+        if post.save.filter(id=request.user.id).exists():
+            is_saved = True
         if post.like.filter(id=request.user.id).exists():
             is_liked = True
         images = Images.objects.filter(post=post)
         form = CommentForm()
         comments = Comment.objects.filter(post = post,reply = None).order_by('-id')
+        if request.user.is_authenticated and request.user != post.author:
+            post.viewed_users.add(request.user)
         context = {
             'post'      : post,
             'form'      : form,
             'comments'  : comments,
             'images'    : images,
             'is_liked'  : is_liked,
+            'is_saved'  : is_saved,
             'total_likes': post.total_likes()
         }
         return render(request,'blog/post_detail.html', context)
@@ -85,6 +105,9 @@ class PostDetailView(View):
         if form.is_valid():
             
             post = get_object_or_404(Post, pk=kwargs['pk'])
+            is_saved = False
+            if post.save.filter(id=request.user.id).exists():
+                is_saved = True
             is_liked = False
             if post.like.filter(id=request.user.id).exists():
                 is_liked = True
@@ -110,11 +133,15 @@ class PostDetailView(View):
             'form'      : form,
             'comments'  : comments,
             'is_liked'  : is_liked,
+            'is_saved'  : is_saved,
             'total_likes': post.total_likes()
             }          
             return render(request, 'blog/post_detail.html',context)
         form = CommentForm()
-        post = get_object_or_404(Post, pk=kwargs['pk'])   
+        post = get_object_or_404(Post, pk=kwargs['pk'])
+        is_saved = False
+        if post.save.filter(id=request.user.id).exists():
+            is_saved = True   
         is_liked = False
         if post.like.filter(id=request.user.id).exists():
             is_liked = True
@@ -131,6 +158,7 @@ class PostDetailView(View):
             'form'      : form,
             'comments'  : comments,
             'is_liked'  : is_liked,
+            'is_saved'  : is_saved,
             'total_likes': post.total_likes()
         }          
         return render(request, 'blog/post_detail.html', context)
@@ -152,8 +180,21 @@ class LikepostView(LoginRequiredMixin ,View):
             post.like.add(request.user)
             is_liked = True
         return HttpResponseRedirect(post.get_absolute_url())
-    
 
+class SavepostView(LoginRequiredMixin ,View):
+    login_url = 'login'
+    redirect_field_name = 'redirect_to'
+
+    def post(self, request, *args, **kwargs):
+        post = get_object_or_404(Post, id=request.POST.get('post_save'))
+        is_saved = False
+        if post.save.filter(id=request.user.id).exists():
+            post.save.remove(request.user)
+            is_saved = False
+        else:
+            post.save.add(request.user)
+            is_saved = True
+        return HttpResponseRedirect(post.get_absolute_url())    
 
 @login_required(login_url='login')
 def askQuestion(request):
